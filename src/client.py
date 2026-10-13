@@ -35,13 +35,11 @@ class AudioClient(flwr.client.NumPyClient):
 		tf.keras.backend.clear_session()
 
 	def __call__(self, introduce=False):
-		try:
-			if introduce: print(f"This is client {self.client_id} with train dataset of {self.num_examples_train} elements.")
-			set_logger_level()
-			flwr.client.start_numpy_client(self.server_address, self)
-			print("Client Shutdown.")
-		except RuntimeError as e:
-			print(e)
+		if introduce:
+			print(f"This is client {self.client_id} with train dataset of {self.num_examples_train} elements.")
+		set_logger_level()
+		flwr.client.start_numpy_client(self.server_address, self)
+		print("Client Shutdown.")
 		return 0
 
 	def get_parameters(self):  

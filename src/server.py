@@ -10,11 +10,7 @@ import pathlib
 import uuid
 import gc
 import time
-import flwr
 import logging
-import tensorflow as tf
-from model import Network
-from data import DataBuilder
 
 class AudioServer:
 
@@ -93,20 +89,19 @@ def set_gpu_limits(gpu_id, gpu_memory):
 	os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
 	import tensorflow as tf
 	gpus = tf.config.list_physical_devices("GPU")
-	if not gpus:
-		print("No GPU's available. Server will run on CPU.")
-	else:
-		try:
-			tf.config.experimental.set_virtual_device_configuration(gpus[0], 
-				[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=gpu_memory)])
-		except RuntimeError as e:
-			print(e)
+	if gpu_id and not gpus:
+		raise RuntimeError("Requested GPU %s is unavailable; use an empty --gpu_id for CPU" % gpu_id)
+	if gpus:
+		tf.config.experimental.set_virtual_device_configuration(gpus[0],
+			[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=gpu_memory)])
+
 
 def main(): 
+	global flwr, tf, Network, DataBuilder
 
 	parser = argparse.ArgumentParser(description="Flower Federated Learning - Server")
-	parser.add_argument("--server_address", type=str,   default="[::]:10001",           required=False,  help=f"gRPC server address (default: [::]:8080)")
-	parser.add_argument("--rounds",         type=int,   default=100,                    required=False,  help="Number of rounds of federated learning (default: 3)")
+	parser.add_argument("--server_address", type=str,   default="127.0.0.1:10001",           required=False,  help="gRPC server address")
+	parser.add_argument("--rounds",         type=int,   default=100,                    required=False,  help="Number of rounds of federated learning")
 	parser.add_argument("--batch_size",     type=int,   default=64,                     required=False,  help="Training Batch Size (no default)")
 	parser.add_argument("--dataset_dir",    type=str,   default="../dataset",           required=False,  help="Relevant path to dataset (no default)")
 	parser.add_argument("--learning_rate",  type=float, default=0.001,                  required=False,  help="Model Learning Rate (no default)")
@@ -114,20 +109,25 @@ def main():
 	parser.add_argument("--min_sample_size",type=int,   default=1,                      required=False,  help="Minimum number of clients used for fit/evaluate (default: 1)")
 	parser.add_argument("--train_epochs",   type=int,   default=1,                      required=False,  help="Clients train epochs (no default)")
 	parser.add_argument("--seed",           type=int,   default=2021,                   required=False,  help="Seed for clients data shuffling (default: 2021)")
+	parser.add_argument("--gpu_id", type=str, default="", help="GPU ID; empty uses CPU")
 	parser.add_argument("--gpu_memory",     type=int,   default=384,                    required=False,  help="GPU Available Memory (no default)")
 	parser.add_argument("--eval_step",      type=int,   default=1,                      required=False,  help="Evaluation Perform Step")
 	parser.add_argument("--verbose",        type=int,   default=1,                      required=False,  help="Evaluation Detail to be displayed")
 	args = parser.parse_args()
+	import flwr
+	import tensorflow as tf
+	from model import Network
+	from data import DataBuilder
 
 	# Set Experiment Parameters
 	unique_id =  str(uuid.uuid1())
-	dataset_dir = os.path.join(pathlib.Path.home(),args.dataset_dir)
+	dataset_dir = str(pathlib.Path(args.dataset_dir).expanduser().resolve())
 	# Notify Experiment ID to console.
 	print('%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n'+
 		  ' Experiment ID : '+unique_id+'\n'+
 		  '%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n')
 	# GPU Setup
-	set_gpu_limits(gpu_id='0', gpu_memory=args.gpu_memory)
+	set_gpu_limits(gpu_id=args.gpu_id, gpu_memory=args.gpu_memory)
 	# Load Test Dataset
 	ds_test, num_classes = DataBuilder.get_ds_test(data_dir=dataset_dir, batch_size=args.batch_size, buffer=1024, seed=args.seed)
 	# Create Server Object
@@ -137,7 +137,7 @@ def main():
 		model_ds_test=ds_test, model_verbose=args.verbose,)
 	# Run server
 	set_logger_level()
-	audio_server.server_start(args.server_address[1:-1])
+	audio_server.server_start(args.server_address)
 	return f"\nFinal Accuracy on experiment  {unique_id}: {audio_server.get_accuracy():.04f}\n"
 
 if __name__ == "__main__":

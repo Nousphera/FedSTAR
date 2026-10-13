@@ -1,47 +1,72 @@
-# FedSTAR: Federated Self-Training for Semi-Supervised Audio Recognition
+# FedSTAR
 
-Federated Learning is a distributed machine learning paradigm dealing with decentralized and personal datasets. Since data reside on devices like smartphones and virtual assistants, labeling is entrusted to the clients, or labels are extracted in an automated way. Specifically, in the case of audio data, acquiring semantic annotations can be prohibitively expensive and time-consuming. As a result, an abundance of audio data remains unlabeled and unexploited on users' devices. Most existing federated learning approaches focus on supervised learning without harnessing the unlabeled data. In this work, we study the problem of semi-supervised learning of audio models via self-training in conjunction with federated learning. We propose FedSTAR to exploit large-scale on-device unlabeled data to improve the generalization of audio recognition models. We further demonstrate that self-supervised pre-trained models can accelerate the training of on-device models, significantly improving convergence to within fewer training rounds. We conduct experiments on diverse public audio classification datasets and investigate the performance of our models under varying percentages of labeled and unlabeled data. Notably, we show that with as little as 3% labeled data available, FedSTAR on average can improve the recognition rate by 13.28% compared to the fully supervised federated model.
+Research code for **Federated Self-Training for Semi-Supervised Audio Recognition** by Vasileios Tsouvalas, Aaqib Saeed, and Tanir Ozcelebi. FedSTAR combines federated learning with pseudo-labeling to use unlabeled audio held by clients.
 
-<img src=./images/fedstar.png width=50%/>
+[Journal paper](https://doi.org/10.1145/3520128) · [Preprint](https://arxiv.org/abs/2107.06877) · [ICASSP paper](https://doi.org/10.1109/ICASSP43922.2022.9746356) · [Provenance](PROVENANCE.md)
 
-A complete description of our work can be found in [our recent ACM publication](https://arxiv.org/abs/2107.06877).
+<img src="images/fedstar.png" alt="FedSTAR training overview" width="60%">
 
-## Dependencies
-* Python 3.6+
-* [TensorFlow 2.3.1](https://www.tensorflow.org/)
-* [TensorFlow Datasets](https://www.tensorflow.org/datasets/overview)
+## Status
 
-## Dataset Preparation
-To prepare the datasets, please follow the instruction given in [here](data_splits/README.md).
+This repository preserves the original research implementation and adds bounded setup and launcher repairs. The shipped loader implements the **12-class Speech Commands task**. VoxForge and Ambient Context splits are retained as historical artifacts; they cannot be used with the current loader by changing a path alone.
 
-## Executing experiments
-From the root directory of this repo, run:
+The paper's results have **not been reproduced by this maintenance update**. Read the [reproducibility record](docs/REPRODUCIBILITY.md) before selecting an environment or interpreting results.
 
-```console
-foo@bar:~$ ./run.sh
+## Setup
+
+The training code targets historical TensorFlow 2.3 / TensorFlow Addons and Flower 0.17 APIs. [requirements.txt](requirements.txt) preserves the original declarations; it is not a validated installation lock. In particular, the original file declares two different TensorFlow package versions. See [environment requirements](docs/REPRODUCIBILITY.md#environment) before attempting training; a modern Python installation alone is insufficient.
+
+For launcher inspection and its lightweight tests:
+
+```bash
+git clone https://github.com/Nousphera/FedSTAR.git
+cd FedSTAR
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-launcher.txt
+python -m unittest discover -s tests -v
 ```
-You can configure all federated parameters (i.e. number of federated rounds, number of clients, percentage of labelled data, etc.,) from the [config](config.yml) file.
 
-## Reference
-If you use this repository, please consider citing:
+Prepare audio using the [dataset instructions](data_splits/README.md). The original generated training silence clips are also required; downloading the archives alone does not produce the complete supplied split.
 
-<pre>article{10.1145/3520128,
-	author = {Tsouvalas, Vasileios and Saeed, Aaqib and Ozcelebi, Tanir},
-	title = {Federated Self-Training for Semi-Supervised Audio Recognition},
-	year = {2022},
-	publisher = {Association for Computing Machinery},
-	address = {New York, NY, USA},
-	issn = {1539-9087},
-	url = {https://doi.org/10.1145/3520128},
-	doi = {10.1145/3520128},
-	journal = {ACM Trans. Embed. Comput. Syst.},
-	month = {feb},
-}</pre>
+## Run an experiment
 
+Edit [config.yml](config.yml), then run from any directory:
 
-<pre>@INPROCEEDINGS{9746356,
-  author={Tsouvalas, Vasileios and Saeed, Aaqib and Ozcelebi, Tanir},
-  booktitle={ICASSP 2022 - 2022 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)}, 
-  title={Federated Self-Training for Data-Efficient Audio Recognition}, 
-  year={2022},
-  doi={10.1109/ICASSP43922.2022.9746356}}</pre>
+```bash
+./run.sh --dry-run
+./run.sh
+```
+
+Use the script's full path when outside the checkout. `PYTHON=/path/to/python ./run.sh` selects the prepared training interpreter. Alternatively, run `python run.py --config /path/to/config.yml`. Relative `DATA_DIR` values resolve against the configuration file's directory.
+
+The default configuration uses five CPU clients, two participants per round, two rounds, one local epoch, 5% labeled data, and the supervised baseline (`FEDSTAR: false`). Set `FEDSTAR: true` to enable self-training. Keep both labeled and unlabeled examples in that mode.
+
+For NVIDIA GPUs, set `server.GPU_ID` to a device ID and `clients.GPU_IDS` to a comma-separated list, for example `"0,1"`. Clients use those IDs round-robin; `GPU_MEMORY_SIZE` limits each TensorFlow process. Empty IDs select CPU. GPU memory is not reserved globally, so account for concurrent clients and the server yourself. Requested GPUs that TensorFlow cannot see cause an error.
+
+The launcher waits for the local server, refuses an occupied address, propagates worker failures, and cleans up only the processes it starts. Its startup timeout defaults to 120 seconds and can be changed with `--startup-timeout`. Full training still requires a compatible environment and complete audio data.
+
+## Citation
+
+```bibtex
+@article{tsouvalas2022fedstar,
+  author = {Tsouvalas, Vasileios and Saeed, Aaqib and Ozcelebi, Tanir},
+  title = {Federated Self-training for Semi-supervised Audio Recognition},
+  journal = {ACM Transactions on Embedded Computing Systems},
+  volume = {21},
+  number = {6},
+  year = {2022},
+  doi = {10.1145/3520128}
+}
+
+@inproceedings{tsouvalas2022dataefficient,
+  author = {Tsouvalas, Vasileios and Saeed, Aaqib and Ozcelebi, Tanir},
+  title = {Federated Self-Training for Data-Efficient Audio Recognition},
+  booktitle = {ICASSP 2022 - 2022 IEEE International Conference on Acoustics, Speech and Signal Processing},
+  pages = {476--480},
+  year = {2022},
+  doi = {10.1109/ICASSP43922.2022.9746356}
+}
+```
+
+Paper metadata was checked against Crossref on 2026-10-13. Software is distributed under [Apache-2.0](LICENSE); dataset licenses and terms remain with their respective providers.

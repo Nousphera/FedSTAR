@@ -1,3 +1,6 @@
+# Historical upstream declarations, preserved for provenance; NOT a validated lock.
+# The two TensorFlow packages specify different versions; do not install blindly.
+# pandas/numpy are also imported by the source. See docs/REPRODUCIBILITY.md.
 tensorflow == 2.3.1
 tensorflow-gpu == 2.3.2
 tensorflow-addons == 0.11.2

@@ -38,5 +38,13 @@ jobs:
         run: |
           flwr run . --stream --run-config "output='$(pwd)/runs/flower-smoke'" \
             --federation-config 'num-supernodes=2 client-resources-num-cpus=1 init-args-num-cpus=2'
+          python - <<'PYVERIFY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("runs/flower-smoke/metrics.json").read_text())
+          rounds = [row for row in result["rounds"] if row["round"] > 0]
+          assert len(rounds) == 2 and all(len(row["client_metrics"]) == 2 for row in rounds)
+          assert Path("runs/flower-smoke/model.keras").is_file()
+          PYVERIFY
       - name: Check whitespace
         run: git show --format= --check HEAD

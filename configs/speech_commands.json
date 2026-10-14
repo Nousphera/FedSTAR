@@ -1,0 +1,14 @@
+{
+  "dataset": "speech_commands",
+  "manifest": "data/speech_commands.json",
+  "clients": 5,
+  "rounds": 100,
+  "participation": 0.8,
+  "local_epochs": 1,
+  "labeled_fraction": 0.05,
+  "unlabeled_fraction": 1.0,
+  "quantity_variation": 0.25,
+  "batch_size": 64,
+  "seed": 2021,
+  "output": "runs/speech_commands-2021"
+}

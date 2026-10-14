@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fedstar"
+version = "0.2.0"
+description = "Federated self-training for semi-supervised audio recognition"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = "Apache-2.0"
+authors = [{name = "Vasileios Tsouvalas"}, {name = "Aaqib Saeed"}, {name = "Tanir Ozcelebi"}]
+dependencies = ["tensorflow==2.20.0", "numpy==1.26.4", "ml-dtypes==0.5.4", "soundfile>=0.13,<0.14", "scipy>=1.14,<2"]
+
+[project.optional-dependencies]
+flower = ["flwr[simulation]==1.40.0"]
+test = ["pytest>=8,<9", "PyYAML>=6,<7"]
+
+[project.scripts]
+fedstar = "fedstar.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fedstar*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.flwr.app]
+publisher = "nousphera"
+
+[tool.flwr.app.components]
+serverapp = "fedstar.server_app:app"
+clientapp = "fedstar.client_app:app"
+
+[tool.flwr.app.config]
+config = "configs/smoke.json"
+
+[tool.flwr.federations]
+default = "local-simulation"
+
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 2
+options.backend.client-resources.num-cpus = 1
+options.backend.client-resources.num-gpus = 0.0

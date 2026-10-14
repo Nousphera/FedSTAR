@@ -1,61 +1,55 @@
 # Dataset preparation
 
-The current `src/data.py` loader implements the Speech Commands task: ten command words, silence, and unknown. It reads one relative WAV path per line, infers labels from the first directory component, and expects:
-
-```text
-speech_commands/
-├── Data/
-│   ├── Train/<label>/<file>.wav
-│   └── Test/<label>/<file>.wav
-├── train_split.txt
-└── test_split.txt
-```
+The maintained `fedstar prepare` command reads the supplied split files, checks every local audio path, and writes one manifest with a shared class mapping. It never downloads data. Obtain audio under the providers' terms; no audio is bundled here. `src/data.py` is the historical Speech Commands-only loader and is not used by the maintained package.
 
 ## Speech Commands v2
 
-From the repository root, download and extract the official archives:
+Obtain the training and test archives linked by the [TensorFlow dataset documentation](https://www.tensorflow.org/datasets/catalog/speech_commands). Extract to separate roots:
 
-```bash
-mkdir -p datasets/speech_commands/Data/Train datasets/speech_commands/Data/Test
-curl --fail --location http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz \
-  --output datasets/speech_commands/train.tar.gz
-curl --fail --location http://download.tensorflow.org/data/speech_commands_test_set_v0.02.tar.gz \
-  --output datasets/speech_commands/test.tar.gz
-tar -xzf datasets/speech_commands/train.tar.gz -C datasets/speech_commands/Data/Train
-tar -xzf datasets/speech_commands/test.tar.gz -C datasets/speech_commands/Data/Test
-cp data_splits/speech_commands/train_split.txt datasets/speech_commands/
-cp data_splits/speech_commands/test_split.txt datasets/speech_commands/
+```text
+datasets/speech_commands/
+├── train/<label>/<file>.wav
+└── test/<label>/<file>.wav
 ```
 
-Source: [TensorFlow Speech Commands dataset documentation](https://www.tensorflow.org/datasets/catalog/speech_commands). Audio is not bundled in this repository.
+The class order is `yes,no,up,down,left,right,on,off,stop,go,silence,unknown`. Other words map to unknown. `_silence_`, `silence`, and `training_silence` directories map to silence. Both splits use this fixed order.
 
-**Additional original data are required.** The supplied training split contains 668 `_silence_/*.wav` entries (for example `doing_the_dishes_36.wav`). Their generation procedure and generated clips are not included. Obtain the original prepared clips and place them under `Data/Train/_silence_/` to use the historical split. Do not silently drop them or invent a segmentation rule and call the resulting experiment a reproduction.
-
-Check every referenced file before starting training:
+**The supplied training split requires 668 generated `_silence_/*.wav` clips** (for example `doing_the_dishes_36.wav`) whose original generation recipe is absent. Official archive extraction alone is insufficient. Obtain those prepared clips to use the historical split; the adapter fails on missing files. Alternatively supply and document a new split and silence preparation method, with no claim that it is the historical dataset.
 
 ```bash
-python - <<'PYTHON'
-from pathlib import Path
-root = Path('datasets/speech_commands')
-missing = []
-for split, folder in [('train', 'Train'), ('test', 'Test')]:
-    entries = (root / f'{split}_split.txt').read_text().splitlines()
-    missing.extend(root / 'Data' / folder / entry for entry in entries
-                   if not (root / 'Data' / folder / entry).is_file())
-print(f'Missing audio files: {len(missing)}')
-for path in missing[:10]:
-    print(path)
-raise SystemExit(bool(missing))
-PYTHON
+fedstar prepare --task speech_commands \
+  --train-root datasets/speech_commands/train --test-root datasets/speech_commands/test \
+  --train-split data_splits/speech_commands/train_split.txt \
+  --test-split data_splits/speech_commands/test_split.txt --output data/speech_commands.json
+fedstar train --config configs/speech_commands.json
 ```
 
-This checks file presence only. The feature pipeline assumes 16 kHz audio and does not resample inputs; sample-rate and waveform checks are still needed for externally prepared data. The included splits contain 85,511 training and 4,890 test entries.
+The supplied files list 85,511 train and 4,890 test examples. Preparation checks presence, unique resolved paths, and train/test disjointness. Source files remain unchanged for provenance.
 
-## Historical splits
+## VoxForge
 
-[VoxForge](voxforge) and [Ambient Context](ambient_context) splits are retained unchanged for provenance. They are not supported by the shipped Speech Commands loader:
+Arrange the locally obtained [VoxForge](https://www.voxforge.org/) recordings so paths in each split resolve relative to their root. For example, a line `de/Trunk/Audio/Main/16kHz_16bit/.../wav/recording.wav` resolves to `<root>/de/Trunk/Audio/Main/16kHz_16bit/.../wav/recording.wav`. Roots may be the same corpus directory when split paths are disjoint.
 
-- VoxForge has six language labels. The current training loader would collapse them into the unknown class.
-- Ambient Context uses tab-separated filenames and labels, whereas the current loader reads path-only rows.
+The fixed class order is `de,en,es,fr,it,ru`. An unrecognized language fails rather than becoming a keyword “unknown” class.
 
-Dataset-specific preparation and label mapping must be recovered and validated before using these splits. Merely changing `DATA_DIR` does not reproduce either experiment. See [the reproducibility record](../docs/REPRODUCIBILITY.md).
+```bash
+fedstar prepare --task voxforge \
+  --train-root datasets/voxforge --test-root datasets/voxforge \
+  --train-split data_splits/voxforge/train_split.txt \
+  --test-split data_splits/voxforge/test_split.txt --output data/voxforge.json
+```
+
+The split files identify historical recordings; this release cannot guarantee every upstream recording remains downloadable. No automatic scraper or dataset redistribution is included.
+
+## Ambient Acoustic Contexts
+
+Use the dataset cited as reference 33 in the [paper](https://doi.org/10.1145/3520128). Each supplied row is `relative_filename<TAB>class_name`. Arrange local WAV files beneath the corresponding root. The adapter trims incidental label whitespace and constructs one sorted class order from both splits; the full supplied splits contain10 classes. A subset manifest can have fewer classes for checks and is not the benchmark task.
+
+```bash
+fedstar prepare --task ambient_context \
+  --train-root datasets/ambient_context --test-root datasets/ambient_context \
+  --train-split data_splits/ambient_context/train_split.txt \
+  --test-split data_splits/ambient_context/test_split.txt --output data/ambient_context.json
+```
+
+All adapters read audio through SoundFile, average channels, resample to 16 kHz with SciPy polyphase filtering, then compute log-mel features. Training uses random one-second crops; evaluation averages probabilities over complete one-second segments. Small clips are padded; incomplete trailing segments are dropped. See [method details](../docs/METHOD.md).

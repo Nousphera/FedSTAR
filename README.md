@@ -1,78 +1,68 @@
 # FedSTAR
 
-Research code for **Federated Self-Training for Semi-Supervised Audio Recognition** by Vasileios Tsouvalas, Aaqib Saeed, and Tanir Ozcelebi. FedSTAR combines federated learning with pseudo-labeling to use unlabeled audio held by clients.
+Federated self-training for semi-supervised audio recognition. Each client learns from its labeled audio and confident pseudo-labels, while a server aggregates updates with FedAvg.
 
-[Journal paper](https://doi.org/10.1145/3520128) · [Preprint](https://arxiv.org/abs/2107.06877) · [ICASSP paper](https://doi.org/10.1109/ICASSP43922.2022.9746356) · [Provenance](PROVENANCE.md)
+[Journal paper](https://doi.org/10.1145/3520128) · [ICASSP paper](https://doi.org/10.1109/ICASSP43922.2022.9746356) · [Project page](https://nousphera.github.io/FedSTAR/) · [Poster](https://nousphera.github.io/FedSTAR/poster.pdf) · [Provenance](PROVENANCE.md)
 
 <img src="images/fedstar.png" alt="FedSTAR training overview" width="60%">
 
-## Status
+## Install and run
 
-This repository preserves the original research implementation and adds bounded setup and launcher repairs. The shipped loader implements the **12-class Speech Commands task**. VoxForge and Ambient Context splits are retained as historical artifacts; they cannot be used with the current loader by changing a path alone.
-
-The paper's results have **not been reproduced by this maintenance update**. Read the [reproducibility record](docs/REPRODUCIBILITY.md) before selecting an environment or interpreting results.
-
-## Setup
-
-The training code targets historical TensorFlow 2.3 / TensorFlow Addons and Flower 0.17 APIs. [requirements.txt](requirements.txt) preserves the original declarations; it is not a validated installation lock. In particular, the original file declares two different TensorFlow package versions. See [environment requirements](docs/REPRODUCIBILITY.md#environment) before attempting training; a modern Python installation alone is insufficient.
-
-For launcher inspection and its lightweight tests:
+Use Python 3.11 or 3.12. The maintained `fedstar/` package uses TensorFlow 2.20, Keras 3, and Flower 1.40. Put the environment at a path without spaces for Ray workers.
 
 ```bash
-git clone https://github.com/Nousphera/FedSTAR.git
-cd FedSTAR
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-launcher.txt
-python -m unittest discover -s tests -v
+python3.11 -m venv ~/.venvs/fedstar
+source ~/.venvs/fedstar/bin/activate
+python -m pip install -e '.[flower,test]'
+python -m pytest -q
+fedstar train --config configs/smoke.json
+fedstar flower --config configs/smoke.json --output runs/flower-smoke
 ```
 
-Prepare audio using the [dataset instructions](data_splits/README.md). The original generated training silence clips are also required; downloading the archives alone does not produce the complete supplied split.
+Both commands run the four-block audio CNN through two clients and two rounds on generated waveforms; the second uses real Flower ClientApp/ServerApp messages and Ray workers. Outputs include resolved configuration, client partitions, environment, round metrics, and `model.keras`. Existing run directories are never overwritten. Synthetic accuracy does not measure paper performance.
 
-## Run an experiment
+## Prepare data
 
-Edit [config.yml](config.yml), then run from any directory:
+The maintained adapters support **Speech Commands v2 (12 classes), VoxForge (6 languages), and Ambient Context (10 classes)**. Obtain the audio separately and follow [data preparation](data_splits/README.md). For example:
 
 ```bash
-./run.sh --dry-run
-./run.sh
+fedstar prepare --task voxforge \
+  --train-root datasets/voxforge/train --test-root datasets/voxforge/test \
+  --train-split data_splits/voxforge/train_split.txt \
+  --test-split data_splits/voxforge/test_split.txt --output data/voxforge.json
+fedstar train --config configs/voxforge.json --seed 2021
 ```
 
-Use the script's full path when outside the checkout. `PYTHON=/path/to/python ./run.sh` selects the prepared training interpreter. Alternatively, run `python run.py --config /path/to/config.yml`. Relative `DATA_DIR` values resolve against the configuration file's directory.
+Paths inside each split are relative to the corresponding audio root. Preparation checks every file and rejects overlapping train/test paths. Audio is converted to mono and resampled to 16 kHz. Clients receive disjoint utterances; unlabeled targets are masked. The class-skew option restricts **labeled data only**, leaving the unlabeled allocation unchanged.
 
-The default configuration uses five CPU clients, two participants per round, two rounds, one local epoch, 5% labeled data, and the supervised baseline (`FEDSTAR: false`). Set `FEDSTAR: true` to enable self-training. Keep both labeled and unlabeled examples in that mode.
+Paper settings use temperature 4, `Ls + 0.5 Lu`, and a global-round cosine confidence threshold from 0.5 toward 0.9. Set `supervised_only` for the labeled-only baseline. See [method mapping](docs/METHOD.md) for exact preprocessing, loss normalization, aggregation, and documented source differences.
 
-For NVIDIA GPUs, set `server.GPU_ID` to a device ID and `clients.GPU_IDS` to a comma-separated list, for example `"0,1"`. Clients use those IDs round-robin; `GPU_MEMORY_SIZE` limits each TensorFlow process. Empty IDs select CPU. GPU memory is not reserved globally, so account for concurrent clients and the server yourself. Requested GPUs that TensorFlow cannot see cause an error.
+## Optional pretraining
 
-The launcher waits for the local server, refuses an occupied address, propagates worker failures, and cleans up only the processes it starts. Its startup timeout defaults to 120 seconds and can be changed with `--startup-timeout`. Full training still requires a compatible environment and complete audio data.
+A separate contrastive encoder can initialize FedSTAR:
 
-## Citation
+```bash
+fedstar pretrain --clips data/fsd50k-clips.json --output runs/pretrain
+```
+
+The JSON file is a list of local FSD50K WAV paths. Then set `pretrained_encoder` to `runs/pretrain/encoder.keras` in the experiment config. This path implements the paper's two-crop, bilinear contrastive design with explicit loss choices. The original pretraining code and checkpoint were not recovered, so this is a **paper-derived reconstruction**, not the historical checkpoint. Defaults are 500 epochs and batch size 1024; use a smaller batch for a bounded check.
+
+## Reproducibility
+
+The release verifies analytic method tests, all three split adapters, generated WAV training, encoder transfer, model serialization, and actual Flower simulation. It does **not** reproduce the published dataset benchmarks. The supplied Speech Commands split needs 668 original generated silence clips whose generation recipe is missing. Read the [reproducibility record](docs/REPRODUCIBILITY.md) for commands, artifacts, seeds, environment, and remaining gaps.
+
+The original `src/`, `run.py`, `config.yml`, and `requirements.txt` remain historical reference code. Install the maintained package above for current training; those old dependencies are not a validated modern environment.
+
+## Citation and license
 
 ```bibtex
 @article{tsouvalas2022fedstar,
   author = {Tsouvalas, Vasileios and Saeed, Aaqib and Ozcelebi, Tanir},
   title = {Federated Self-training for Semi-supervised Audio Recognition},
   journal = {ACM Transactions on Embedded Computing Systems},
-  volume = {21},
-  number = {6},
-  year = {2022},
+  volume = {21}, number = {6}, year = {2022},
   doi = {10.1145/3520128}
-}
-
-@inproceedings{tsouvalas2022dataefficient,
-  author = {Tsouvalas, Vasileios and Saeed, Aaqib and Ozcelebi, Tanir},
-  title = {Federated Self-Training for Data-Efficient Audio Recognition},
-  booktitle = {ICASSP 2022 - 2022 IEEE International Conference on Acoustics, Speech and Signal Processing},
-  pages = {476--480},
-  year = {2022},
-  doi = {10.1109/ICASSP43922.2022.9746356}
 }
 ```
 
-Paper metadata was checked against Crossref on 2026-10-13. Software is distributed under [Apache-2.0](LICENSE); dataset licenses and terms remain with their respective providers.
-<!-- nousphera-project-resources -->
-## Project resources
-
-[Project page](https://nousphera.github.io/FedSTAR/) · [Research overview](https://nousphera.github.io/projects/fedstar/) · [A0 poster](https://nousphera.github.io/FedSTAR/poster.pdf) · [Paper](https://doi.org/10.1145/3520128)
-
-This repository contains the research implementation. The project page and poster summarize the published method and reported experiments; this documentation update does not claim an independent reproduction of those experiments.
+Code: [Apache-2.0](LICENSE). Dataset licenses and access terms remain with their providers. Original Git history and author attribution are preserved.

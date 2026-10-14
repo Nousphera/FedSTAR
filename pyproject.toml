@@ -34,11 +34,4 @@ clientapp = "fedstar.client_app:app"
 
 [tool.flwr.app.config]
 config = "configs/smoke.json"
-
-[tool.flwr.federations]
-default = "local-simulation"
-
-[tool.flwr.federations.local-simulation]
-options.num-supernodes = 2
-options.backend.client-resources.num-cpus = 1
-options.backend.client-resources.num-gpus = 0.0
+output = ""

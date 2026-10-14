@@ -76,7 +76,14 @@ class RunConfig:
 
 
 def load_config(path, **overrides):
-    value = json.loads(Path(path).read_text())
+    config_path = Path(path).resolve()
+    value = json.loads(config_path.read_text())
+    # Shipped configs live under configs/; keep their data paths tied to the
+    # checkout even when Flower executes a bundled app from a different cwd.
+    base = config_path.parent.parent if config_path.parent.name == "configs" else config_path.parent
+    for key in ("manifest", "pretrained_encoder", "output"):
+        if value.get(key) and not Path(value[key]).is_absolute():
+            value[key] = str((base / value[key]).resolve())
     value.update({k: v for k, v in overrides.items() if v is not None})
     return RunConfig(**value)
 
@@ -106,7 +113,12 @@ def make_data(config):
         value = json.loads(Path(config.manifest).read_text())
         if value["task"] != config.dataset:
             raise ValueError("Manifest task differs from config.dataset")
+        from .preparation import check_records
         classes = value["classes"]
+        check_records(value["records"], classes, ("train", "test"))
+        from .data import CLASSES
+        if config.dataset in CLASSES and classes != CLASSES[config.dataset]:
+            raise ValueError("Manifest class order differs from task labels")
         rows = [r for r in value["records"] if r["split"] == "train"]
         test = [r for r in value["records"] if r["split"] == "test"]
     clients = partition(

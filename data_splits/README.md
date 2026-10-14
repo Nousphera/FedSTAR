@@ -4,27 +4,41 @@ The maintained `fedstar prepare` command reads the supplied split files, checks 
 
 ## Speech Commands v2
 
-Obtain the training and test archives linked by the [TensorFlow dataset documentation](https://www.tensorflow.org/datasets/catalog/speech_commands). Extract to separate roots:
-
-```text
-datasets/speech_commands/
-├── train/<label>/<file>.wav
-└── test/<label>/<file>.wav
-```
-
-The class order is `yes,no,up,down,left,right,on,off,stop,go,silence,unknown`. Other words map to unknown. `_silence_`, `silence`, and `training_silence` directories map to silence. Both splits use this fixed order.
-
-**The supplied training split requires 668 generated `_silence_/*.wav` clips** (for example `doing_the_dishes_36.wav`) whose original generation recipe is absent. Official archive extraction alone is insufficient. Obtain those prepared clips to use the historical split; the adapter fails on missing files. Alternatively supply and document a new split and silence preparation method, with no claim that it is the historical dataset.
+The [official TensorFlow dataset builder](https://github.com/tensorflow/datasets/blob/master/tensorflow_datasets/datasets/speech_commands/speech_commands_dataset_builder.py)
+identifies the training and test archives. The maintained downloader uses their
+Google Storage HTTPS endpoints, stages extraction in a temporary directory,
+rejects traversal/links/special files, records archive SHA-256 values and renames
+the complete result into a new destination. It never replaces existing data.
 
 ```bash
-fedstar prepare --task speech_commands \
-  --train-root datasets/speech_commands/train --test-root datasets/speech_commands/test \
-  --train-split data_splits/speech_commands/train_split.txt \
-  --test-split data_splits/speech_commands/test_split.txt --output data/speech_commands.json
-fedstar train --config configs/speech_commands.json
+fedstar download-speech --output datasets/speech_commands
+fedstar speech-commands --train-root datasets/speech_commands/train \
+  --test-root datasets/speech_commands/test --output data/speech_commands --seed 2021
+fedstar validate --manifest data/speech_commands/manifest.json
 ```
 
-The supplied files list 85,511 train and 4,890 test examples. Preparation checks presence, unique resolved paths, and train/test disjointness. Source files remain unchanged for provenance.
+Skip the first command when those archives are already extracted. The preparation
+uses sorted WAV paths, excludes `validation_list.txt` and `testing_list.txt` from
+training, and uses the official test archive. All non-command words map to
+unknown; all ten command words retain their names. Class order is
+`yes,no,up,down,left,right,on,off,stop,go,silence,unknown`.
+
+A seeded NumPy generator chooses a background-noise recording uniformly, then
+an inclusive valid start offset for each of 668 one-second training silence clips.
+No amplitude scaling is applied; clips are saved as mono 16 kHz PCM16. Use
+`--silence-count` to change the count. The manifest records seed, each noise-file
+checksum, source, crop offset and all example hashes. Input recordings stay in
+place; generated noise clips live in `data/speech_commands/silence/` alongside
+`manifest.json`, `train.txt` and `test.txt`. Keep that directory and the input
+corpus together. The provided Speech Commands config points at this manifest.
+
+This is a documented replacement split, not the exact paper split. Historical
+`train_split.txt`/`test_split.txt` remain unchanged: 85,511 training and 4,890 test
+rows, including 668 unrecovered generated training silence files. If those exact
+files are available, use `fedstar prepare --task speech_commands --train-root ...
+--test-root ... --train-split data_splits/speech_commands/train_split.txt
+--test-split data_splits/speech_commands/test_split.txt --output data/historical.json`
+and set `manifest` in a copied config to that file. Missing files fail explicitly.
 
 ## VoxForge
 
@@ -43,7 +57,7 @@ The split files identify historical recordings; this release cannot guarantee ev
 
 ## Ambient Acoustic Contexts
 
-Use the dataset cited as reference 33 in the [paper](https://doi.org/10.1145/3520128). Each supplied row is `relative_filename<TAB>class_name`. Arrange local WAV files beneath the corresponding root. The adapter trims incidental label whitespace and constructs one sorted class order from both splits; the full supplied splits contain10 classes. A subset manifest can have fewer classes for checks and is not the benchmark task.
+Use the dataset cited as reference 33 in the [paper](https://doi.org/10.1145/3520128). Each supplied row is `relative_filename<TAB>class_name`. Arrange local WAV files beneath the corresponding root. The adapter trims incidental label whitespace and constructs one sorted class order from both splits; the full supplied splits contain 10 classes. A subset manifest can have fewer classes for checks and is not the benchmark task.
 
 ```bash
 fedstar prepare --task ambient_context \
@@ -53,3 +67,31 @@ fedstar prepare --task ambient_context \
 ```
 
 All adapters read audio through SoundFile, average channels, resample to 16 kHz with SciPy polyphase filtering, then compute log-mel features. Training uses random one-second crops; evaluation averages probabilities over complete one-second segments. Small clips are padded; incomplete trailing segments are dropped. See [method details](../docs/METHOD.md).
+
+
+## FSD50K pretraining inputs
+
+Download and extract the development audio using the instructions and checksum
+list on the [authors' FSD50K record](https://zenodo.org/records/4060432).
+The distribution uses multipart ZIP archives; follow its merge instructions
+before extraction. Keep the metadata and per-clip license information. This
+project does not download that roughly 25 GB distribution or grant dataset rights.
+
+```bash
+fedstar prepare-pretraining --root /path/to/FSD50K.dev_audio --output data/fsd50k-clips.json
+fedstar pretrain --clips data/fsd50k-clips.json --epochs 1 --batch-size 2 --output runs/pretrain-check
+```
+
+The preparation command validates every local WAV, rejects duplicate/escaping
+resolved paths and atomically writes the sorted list consumed by pretraining.
+The pretrainer records input checksums in `clips.json`. Use development audio
+only; do not add downstream held-out clips. The full pretraining defaults and
+missing historical checkpoint are explained in [reproducibility](../docs/REPRODUCIBILITY.md).
+
+## Validate any classification manifest
+
+Run `fedstar validate --manifest data/voxforge.json` (or the corresponding
+Ambient/Speech Commands manifest) before training. The check decodes each file,
+checks saved hashes, verifies labels and rejects duplicate/overlapping paths.
+The training entry point repeats structural and label checks without rehashing
+the entire corpus for each client.

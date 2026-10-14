@@ -32,7 +32,11 @@ jobs:
         run: python -m pytest -q
       - name: Sequential training smoke
         run: fedstar train --config configs/smoke.json
-      - name: Flower training smoke
-        run: fedstar flower --config configs/smoke.json --output runs/flower-smoke
+      - name: Native Flower App smoke
+        env:
+          FLWR_DISABLE_RUNTIME_DEPENDENCY_INSTALLATION: '1'
+        run: |
+          flwr run . --stream --run-config "output='$(pwd)/runs/flower-smoke'" \
+            --federation-config 'num-supernodes=2 client-resources-num-cpus=1 init-args-num-cpus=2'
       - name: Check whitespace
         run: git show --format= --check HEAD

@@ -1,68 +1,128 @@
 # FedSTAR
 
-Federated self-training for semi-supervised audio recognition. Each client learns from its labeled audio and confident pseudo-labels, while a server aggregates updates with FedAvg.
+**Federated Self-training for Semi-supervised Audio Recognition**
 
-[Journal paper](https://doi.org/10.1145/3520128) · [ICASSP paper](https://doi.org/10.1109/ICASSP43922.2022.9746356) · [Project page](https://nousphera.github.io/FedSTAR/) · [Poster](https://nousphera.github.io/FedSTAR/poster.pdf) · [Provenance](PROVENANCE.md)
+Vasileios Tsouvalas · Aaqib Saeed · Tanir Ozcelebi · ACM TECS 2022
 
-<img src="images/fedstar.png" alt="FedSTAR training overview" width="60%">
+[Paper](https://doi.org/10.1145/3520128) · [Project](https://nousphera.github.io/FedSTAR/) · [Poster](https://nousphera.github.io/FedSTAR/poster.pdf)
 
-## Install and run
+## Abstract
 
-Use Python 3.11 or 3.12. The maintained `fedstar/` package uses TensorFlow 2.20, Keras 3, and Flower 1.40. Put the environment at a path without spaces for Ray workers.
+Federated Learning is a distributed machine learning paradigm dealing with decentralized and personal datasets. Since data reside on devices such as smartphones and virtual assistants, labeling is entrusted to the clients or labels are extracted in an automated way. Specifically, in the case of audio data, acquiring semantic annotations can be prohibitively expensive and time-consuming. As a result, an abundance of audio data remains unlabeled and unexploited on users’ devices. Most existing federated learning approaches focus on supervised learning without harnessing the unlabeled data. In this work, we study the problem of semi-supervised learning of audio models via self-training in conjunction with federated learning. We propose FedSTAR to exploit large-scale on-device unlabeled data to improve the generalization of audio recognition models. We further demonstrate that self-supervised pre-trained models can accelerate the training of on-device models, significantly improving convergence within fewer training rounds. We conduct experiments on diverse public audio classification datasets and investigate the performance of our models under varying percentages of labeled and unlabeled data. Notably, we show that with as little as 3% labeled data available, FedSTAR on average can improve the recognition rate by 13.28% compared to the fully supervised federated model.
+
+## Setup
+
+Use Python 3.11 (tested on macOS arm64 CPU); Python 3.12 is supported but untested.
+Create the environment at a path without spaces for Flower/Ray workers.
 
 ```bash
-python3.11 -m venv ~/.venvs/fedstar
-source ~/.venvs/fedstar/bin/activate
-python -m pip install -e '.[flower,test]'
+git clone https://github.com/Nousphera/FedSTAR.git
+cd FedSTAR
+bash scripts/setup_env.sh "$HOME/.venvs/fedstar"
+source "$HOME/.venvs/fedstar/bin/activate"
 python -m pytest -q
-fedstar train --config configs/smoke.json
-fedstar flower --config configs/smoke.json --output runs/flower-smoke
 ```
 
-Both commands run the four-block audio CNN through two clients and two rounds on generated waveforms; the second uses real Flower ClientApp/ServerApp messages and Ray workers. Outputs include resolved configuration, client partitions, environment, round metrics, and `model.keras`. Existing run directories are never overwritten. Synthetic accuracy does not measure paper performance.
+The script creates a new environment, installs `.[flower,test]` constrained by
+`requirements-lock-py311.txt`, and checks dependencies. It never changes an
+existing environment. The maintained package is `fedstar/`; historical `src/`
+and `requirements.txt` are documented in [provenance](PROVENANCE.md).
 
-## Prepare data
+## Datasets
 
-The maintained adapters support **Speech Commands v2 (12 classes), VoxForge (6 languages), and Ambient Context (10 classes)**. Obtain the audio separately and follow [data preparation](data_splits/README.md). For example:
+Speech Commands v2 can be downloaded from the official TensorFlow archive. The
+command downloads roughly 2.5 GB and needs additional extraction space:
 
 ```bash
-fedstar prepare --task voxforge \
-  --train-root datasets/voxforge/train --test-root datasets/voxforge/test \
-  --train-split data_splits/voxforge/train_split.txt \
-  --test-split data_splits/voxforge/test_split.txt --output data/voxforge.json
-fedstar train --config configs/voxforge.json --seed 2021
+python scripts/prepare_data.py download-speech --output datasets/speech_commands
+python scripts/prepare_data.py speech-commands \
+  --train-root datasets/speech_commands/train --test-root datasets/speech_commands/test \
+  --output data/speech_commands --seed 2021
+python scripts/prepare_data.py validate --manifest data/speech_commands/manifest.json
 ```
 
-Paths inside each split are relative to the corresponding audio root. Preparation checks every file and rejects overlapping train/test paths. Audio is converted to mono and resampled to 16 kHz. Clients receive disjoint utterances; unlabeled targets are masked. The class-skew option restricts **labeled data only**, leaving the unlabeled allocation unchanged.
+If already downloaded, start with `speech-commands`. This recipe excludes official
+validation/test utterances from training and creates 668 seeded one-second
+background-noise clips. It records all sample hashes and crop offsets. It is an
+explicit replacement for the unrecovered historical silence-generation recipe,
+not the paper's exact split.
 
-Paper settings use temperature 4, `Ls + 0.5 Lu`, and a global-round cosine confidence threshold from 0.5 toward 0.9. Set `supervised_only` for the labeled-only baseline. See [method mapping](docs/METHOD.md) for exact preprocessing, loss normalization, aggregation, and documented source differences.
+[VoxForge and Ambient Context import commands](data_splits/README.md) use supplied
+split files and locally acquired audio. All three adapters check split ownership,
+decode every recording, and write one shared class mapping with content hashes.
+They convert audio to mono and 16 kHz during loading. Preparation never overwrites
+existing output. See `python scripts/prepare_data.py --help` for every entry point.
 
-## Optional pretraining
+## Run
 
-A separate contrastive encoder can initialize FedSTAR:
+Run the native Flower ClientApp/ServerApp. The smoke uses two clients, two rounds
+and generated waveforms with the full four-block CNN:
 
 ```bash
+export FLWR_HOME="$HOME/.cache/fedstar-flower"
+export FLWR_LOCAL_SUPERLINK_HTTP_API_PORT=39132
+export FLWR_DISABLE_RUNTIME_DEPENDENCY_INSTALLATION=1
+flwr run . --stream \
+  --run-config "config='$(pwd)/configs/smoke.json' output='$(pwd)/runs/flower-smoke'" \
+  --federation-config 'num-supernodes=2 client-resources-num-cpus=1 init-args-num-cpus=2'
+```
+
+After preparing Speech Commands, use its five-client configuration:
+
+```bash
+flwr run . --stream \
+  --run-config "config='$(pwd)/configs/speech_commands.json' output='$(pwd)/runs/speech-commands-flower'" \
+  --federation-config 'num-supernodes=5 client-resources-num-cpus=1 init-args-num-cpus=2'
+```
+
+For the other datasets, substitute `configs/voxforge.json` or
+`configs/ambient_context.json`. Match `num-supernodes` to `clients` in the config.
+Sequential debugging uses `fedstar train --config configs/smoke.json --output runs/sequential-smoke`.
+See [Flower lifecycle and path rules](docs/REPRODUCIBILITY.md#native-flower-cli).
+
+Optional contrastive pretraining uses separately acquired
+[FSD50K development audio](https://zenodo.org/records/4060432):
+
+```bash
+python scripts/prepare_data.py prepare-pretraining --root /path/to/FSD50K.dev_audio \
+  --output data/fsd50k-clips.json
 fedstar pretrain --clips data/fsd50k-clips.json --output runs/pretrain
 ```
 
-The JSON file is a list of local FSD50K WAV paths. Then set `pretrained_encoder` to `runs/pretrain/encoder.keras` in the experiment config. This path implements the paper's two-crop, bilinear contrastive design with explicit loss choices. The original pretraining code and checkpoint were not recovered, so this is a **paper-derived reconstruction**, not the historical checkpoint. Defaults are 500 epochs and batch size 1024; use a smaller batch for a bounded check.
+Set `pretrained_encoder` in the downstream config to the resulting
+`runs/pretrain/encoder.keras`. This is a paper-derived reconstruction; original
+pretraining code and weights were not recovered. The default 500 epochs and
+batch size 1024 require substantial resources; use `--epochs 1 --batch-size 2`
+for a bounded compatibility check.
 
-## Reproducibility
+## Outputs and reproducibility
 
-The release verifies analytic method tests, all three split adapters, generated WAV training, encoder transfer, model serialization, and actual Flower simulation. It does **not** reproduce the published dataset benchmarks. The supplied Speech Commands split needs 668 original generated silence clips whose generation recipe is missing. Read the [reproducibility record](docs/REPRODUCIBILITY.md) for commands, artifacts, seeds, environment, and remaining gaps.
+Each new run saves resolved configuration, disjoint client partitions and label
+masks, environment and input-manifest hashes, round/client metrics, and
+`model.keras`. Choose a fresh output directory for every seed and configuration.
+The defaults implement `Ls + 0.5 Lu`, temperature 4, and the paper's global-round
+confidence schedule. [Method details](docs/METHOD.md) and
+[validation/provenance](docs/REPRODUCIBILITY.md) explain implementation choices.
+Generated-data execution does not establish published benchmark accuracy;
+full-corpus, GPU and historical-checkpoint reproduction remain unverified.
 
-The original `src/`, `run.py`, `config.yml`, and `requirements.txt` remain historical reference code. Install the maintained package above for current training; those old dependencies are not a validated modern environment.
-
-## Citation and license
+## Citation
 
 ```bibtex
 @article{tsouvalas2022fedstar,
   author = {Tsouvalas, Vasileios and Saeed, Aaqib and Ozcelebi, Tanir},
   title = {Federated Self-training for Semi-supervised Audio Recognition},
   journal = {ACM Transactions on Embedded Computing Systems},
-  volume = {21}, number = {6}, year = {2022},
-  doi = {10.1145/3520128}
+  year = {2022},
+  volume = {21},
+  number = {6},
+  articleno = {74},
+  numpages = {26},
+  doi = {10.1145/3520128},
+  url = {https://doi.org/10.1145/3520128}
 }
 ```
 
-Code: [Apache-2.0](LICENSE). Dataset licenses and access terms remain with their providers. Original Git history and author attribution are preserved.
+## License
+
+Code: [Apache-2.0](LICENSE). Dataset, publication and external-model licenses remain with their providers.

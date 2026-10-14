@@ -22,7 +22,7 @@ The unit suite checks analytic pseudo-label temperature/masking/normalization an
 
 ## Data, partitions and seeds
 
-See [dataset preparation](../data_splits/README.md). JSON manifests retain local absolute audio paths and label mappings; keep them local. Runtime output can also contain those paths. No audio, checkpoint, output, or dataset manifest is bundled. All file paths in configs resolve against the working directory.
+See [dataset preparation](../data_splits/README.md). JSON manifests retain local absolute audio paths and label mappings; keep them local. Runtime output can also contain those paths. No audio, checkpoint, output, or dataset manifest is bundled. Paths in shipped configs resolve against the checkout; see the native CLI section.
 
 Defaults follow Table 2/main experiments: Adam 1e-3, beta 0.5, T=4, confidence0.5→0.9, one local epoch, 100 rounds, 80% participation, 25% quantity variation. Shipped dataset configs use5 clients and5% labeled data as an explicit starting setting; change them to the figure/table being evaluated. `batch_size=64` is total batch size (32L+32U). Source and paper do not fully specify all rounding and seed choices; see [method mapping](METHOD.md).
 
@@ -43,3 +43,36 @@ Pretraining writes `encoder.keras`, `clips.json` (paths and SHA256), `environmen
 ## Remaining scientific limits
 
 Published benchmarks have not been rerun. Supplied Speech Commands split files refer to 668 generated silence examples absent from the official archives; their original generation recipe is unknown. Original pretraining source/checkpoints, all experiment seeds, exact client memberships, and full result ledgers were not recovered. The maintained preprocessing and objective intentionally correct documented source/paper discrepancies, so passing tests cannot establish numerical equivalence to the paper or historical code. No formal privacy guarantee, secure aggregation, or differential privacy is added by this local training implementation.
+
+
+## Native Flower CLI
+
+The README's `flwr run . --stream` runs the packaged ClientApp and ServerApp
+through Flower 1.40's managed local SuperLink. Both native CLI paths were verified
+with two clients and two rounds; client metrics, server metrics and model files
+were saved. Generated-data execution is not a dataset benchmark.
+
+`FLWR_HOME` and the local HTTP port in the README isolate this app's runtime from
+other projects. Flower keeps the managed SuperLink running after a run. Use
+`flwr list`, `flwr log RUN_ID --show`, or `flwr stop RUN_ID` in the same environment.
+A stop request stops that run, not the background service. The official
+[local runtime guide](https://flower.ai/docs/framework/main/en/how-to-run-flower-locally.html)
+explains service lifecycle and logs. If changing virtual environments, inspect
+and stop only the matching service process before starting its replacement.
+`FLWR_DISABLE_RUNTIME_DEPENDENCY_INSTALLATION=1` uses the dependencies already
+installed by setup; this avoids a second uncontrolled installation at run time.
+
+The Python environment and its actual package files must live in paths without
+spaces; symlinking a space-containing environment is insufficient. The repository
+and data paths may contain spaces. Supply absolute `config` and `output` paths in
+`--run-config`, as shown in the README. Paths inside files in `configs/` resolve
+against that directory's parent (the checkout), even when Flower executes its
+bundle elsewhere. For a config outside `configs/`, paths resolve against the
+config file's own directory. CLI `--output` overrides resolve in the caller's
+working directory. Set `num-supernodes` equal to the configured client count.
+
+Preparation now decodes every input and records SHA-256/byte counts before
+atomically publishing its manifest. `fedstar validate --manifest PATH` checks those
+hashes again. Training performs structural, label and duplicate-path checks;
+run explicit validation after moving or changing data. Preparation and training
+refuse to overwrite outputs. Manifests are local artifacts and can reveal paths.

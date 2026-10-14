@@ -66,7 +66,10 @@ def create_app(config_override=None):
 
     @application.main()
     def main(grid: Grid, context: Context):
-        config = config_override or load_config(str(context.run_config["config"]))
+        config = config_override or load_config(
+            str(context.run_config["config"]),
+            output=context.run_config.get("output") or None,
+        )
         tf.keras.utils.set_random_seed(config.seed)
         tf.config.experimental.enable_op_determinism()
         clients, test, classes = make_data(config)

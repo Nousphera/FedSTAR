@@ -1,6 +1,6 @@
 {
   "dataset": "speech_commands",
-  "manifest": "data/speech_commands.json",
+  "manifest": "data/speech_commands/manifest.json",
   "clients": 5,
   "rounds": 100,
   "participation": 0.8,

@@ -70,3 +70,9 @@ The launcher waits for the local server, refuses an occupied address, propagates
 ```
 
 Paper metadata was checked against Crossref on 2026-10-13. Software is distributed under [Apache-2.0](LICENSE); dataset licenses and terms remain with their respective providers.
+<!-- nousphera-project-resources -->
+## Project resources
+
+[Project page](https://nousphera.github.io/FedSTAR/) · [Research overview](https://nousphera.github.io/projects/fedstar/) · [A0 poster](https://nousphera.github.io/FedSTAR/poster.pdf) · [Paper](https://doi.org/10.1145/3520128)
+
+This repository contains the research implementation. The project page and poster summarize the published method and reported experiments; this documentation update does not claim an independent reproduction of those experiments.

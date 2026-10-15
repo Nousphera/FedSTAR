@@ -6,11 +6,16 @@ Vasileios Tsouvalas · Aaqib Saeed · Tanir Ozcelebi · ACM TECS 2022
 
 [<img src="docs/assets/icons/paper.svg" width="16" height="16" alt=""> Paper](https://doi.org/10.1145/3520128) · [<img src="docs/assets/icons/project.svg" width="16" height="16" alt=""> Project](https://nousphera.github.io/FedSTAR/) · [Poster](https://nousphera.github.io/FedSTAR/poster.pdf)
 
+<p align="center">
+  <a href="https://nousphera.github.io/FedSTAR/#overview"><img src="docs/assets/readme/overview.webp" width="760" alt="Federated server coordinates several clients, each combining labeled audio and confidence-filtered pseudo-labels from unlabeled audio in local self-training."></a>
+</p>
+<p align="center"><sub>Figure 1 · ACM TECS article, p. 74:3. <a href="https://pure.tue.nl/ws/portalfiles/portal/232168240/3520128.pdf#page=4">Original figure</a> · <a href="https://nousphera.github.io/FedSTAR/#overview">Animated method overview</a></sub></p>
+
 ## Abstract
 
 Federated Learning is a distributed machine learning paradigm dealing with decentralized and personal datasets. Since data reside on devices such as smartphones and virtual assistants, labeling is entrusted to the clients or labels are extracted in an automated way. Specifically, in the case of audio data, acquiring semantic annotations can be prohibitively expensive and time-consuming. As a result, an abundance of audio data remains unlabeled and unexploited on users’ devices. Most existing federated learning approaches focus on supervised learning without harnessing the unlabeled data. In this work, we study the problem of semi-supervised learning of audio models via self-training in conjunction with federated learning. We propose FedSTAR to exploit large-scale on-device unlabeled data to improve the generalization of audio recognition models. We further demonstrate that self-supervised pre-trained models can accelerate the training of on-device models, significantly improving convergence within fewer training rounds. We conduct experiments on diverse public audio classification datasets and investigate the performance of our models under varying percentages of labeled and unlabeled data. Notably, we show that with as little as 3% labeled data available, FedSTAR on average can improve the recognition rate by 13.28% compared to the fully supervised federated model.
 
-## Install
+## Requirements and installation
 
 Use Python 3.11 or 3.12. The dependency lock targets Python 3.11 on macOS arm64 CPU.
 Create the environment at a path without spaces for Flower/Ray workers.
@@ -27,7 +32,7 @@ The script creates a new environment, installs `.[flower,test]` constrained by
 `requirements-lock-py311.txt`, and checks dependencies. It never changes an
 existing environment. The package and command-line entry points are in `fedstar/`.
 
-## Datasets
+## Data preparation
 
 Speech Commands v2 can be downloaded from the official TensorFlow archive. The
 command downloads roughly 2.5 GB and needs additional extraction space:
@@ -52,7 +57,7 @@ decode every recording, and write one shared class mapping with content hashes.
 They convert audio to mono and 16 kHz during loading. Preparation never overwrites
 existing output. See `python scripts/prepare_data.py --help` for every entry point.
 
-## Run
+## Training
 
 Run the native Flower ClientApp/ServerApp. The smoke uses two clients, two rounds
 and generated waveforms with the full four-block CNN:
@@ -80,6 +85,32 @@ For the other datasets, substitute `configs/voxforge.json` or
 Sequential debugging uses `fedstar train --config configs/smoke.json --output runs/sequential-smoke`.
 See [Flower lifecycle and path rules](docs/REPRODUCIBILITY.md#native-flower-cli).
 
+## Evaluation
+
+Training evaluates the global model on held-out audio after every round and
+writes `accuracy` and `eval_loss` to `metrics.json`. Accuracy is stored as a
+fraction. Inspect the final round from the Speech Commands run above:
+
+```bash
+python - runs/speech-commands-flower/metrics.json <<'PY_METRICS'
+import json
+import sys
+from pathlib import Path
+
+last = json.loads(Path(sys.argv[1]).read_text())["rounds"][-1]
+print(f"Round {last['round']}: accuracy {100 * last['accuracy']:.2f}%, loss {last['eval_loss']:.4f}")
+PY_METRICS
+```
+
+The supplied dataset configs start with **5 clients and 5% labels**, 100 rounds,
+80% participation and one local epoch. To select the published setting below,
+set `clients: 15` and `labeled_fraction: 0.03`, then use `num-supernodes=15`
+for Flower. Run each setting with three recorded seeds and distinct output
+directories. Set `supervised_only: true` for the baseline with matching labeled
+clips. See the [experiment guide](docs/REPRODUCIBILITY.md#data-and-seeds).
+
+## Pretraining
+
 Optional contrastive pretraining uses separately acquired
 [FSD50K development audio](https://zenodo.org/records/4060432):
 
@@ -94,6 +125,24 @@ Set `pretrained_encoder` in the downstream config to the resulting
 with learned bilinear similarities. The default 500 epochs and batch size 1024
 require substantial resources; use `--epochs 1 --batch-size 2` for a short run.
 See [the pretraining settings](docs/METHOD.md#contrastive-pretraining).
+
+## Results
+
+**Published three-dataset experiment — 15 clients, 3% labels.** FedSTAR and
+supervised FL receive the same labeled clips; FedSTAR also uses the remaining
+unlabeled pool. Training uses 100 rounds, one local epoch, 80% participation and
+25% data-quantity variation. Mean test accuracy (%) over three runs is shown;
+higher is better. [Paper, Table 4](https://pure.tue.nl/ws/portalfiles/portal/232168240/3520128.pdf#page=16).
+
+| Dataset | Supervised FL | FedSTAR |
+|---|---:|---:|
+| Ambient Context | 33.03 | **49.54** |
+| Speech Commands | 62.98 | **86.82** |
+| VoxForge | 54.26 | **55.82** |
+
+Run variation is reported in [Appendix Table 9](https://pure.tue.nl/ws/portalfiles/portal/232168240/3520128.pdf#page=25).
+The three rows are separate audio classification tasks.
+[Explore further published results](https://nousphera.github.io/FedSTAR/#findings).
 
 ## Configuration and outputs
 

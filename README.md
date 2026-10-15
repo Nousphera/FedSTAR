@@ -83,7 +83,7 @@ flwr run . --stream \
 For the other datasets, substitute `configs/voxforge.json` or
 `configs/ambient_context.json`. Match `num-supernodes` to `clients` in the config.
 Sequential debugging uses `fedstar train --config configs/smoke.json --output runs/sequential-smoke`.
-See [Flower lifecycle and path rules](docs/REPRODUCIBILITY.md#native-flower-cli).
+See [Flower lifecycle and path rules](docs/METHOD.md#native-flower-cli).
 
 ## Evaluation
 
@@ -107,7 +107,7 @@ The supplied dataset configs start with **5 clients and 5% labels**, 100 rounds,
 set `clients: 15` and `labeled_fraction: 0.03`, then use `num-supernodes=15`
 for Flower. Run each setting with three recorded seeds and distinct output
 directories. Set `supervised_only: true` for the baseline with matching labeled
-clips. See the [experiment guide](docs/REPRODUCIBILITY.md#data-and-seeds).
+clips. See the [experiment guide](docs/METHOD.md#data-and-seeds).
 
 ## Pretraining
 
@@ -150,10 +150,8 @@ Each new run saves resolved configuration, disjoint client partitions and label
 masks, environment and input-manifest hashes, round/client metrics, and
 `model.keras`. Choose a fresh output directory for every seed and configuration.
 The defaults implement `Ls + 0.5 Lu`, temperature 4, and the paper's global-round
-confidence schedule. [Method details](docs/METHOD.md) cover the model, loss and sampling rules.
-The [experiment guide](docs/REPRODUCIBILITY.md) describes repeated runs, saved
-metrics, encoder transfer and Flower runtime management.
-[Source credits](PROVENANCE.md) identify the upstream code and license.
+confidence schedule. The [method and configuration guide](docs/METHOD.md) covers
+sampling, repeated runs, encoder transfer and Flower runtime management.
 
 ## Citation
 

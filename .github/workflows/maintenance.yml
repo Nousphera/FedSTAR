@@ -27,7 +27,7 @@ jobs:
       - name: Validate citation metadata
         run: cffconvert --validate
       - name: Compile Python sources
-        run: python -m compileall -q fedstar src tests
+        run: python -m compileall -q fedstar tests
       - name: Run maintenance regression tests
         run: python -m pytest -q
       - name: Sequential training smoke

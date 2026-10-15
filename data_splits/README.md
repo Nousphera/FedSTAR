@@ -93,7 +93,7 @@ fedstar pretrain --clips data/fsd50k-clips.json --epochs 1 --batch-size 2 --outp
 The preparation command validates every local WAV, rejects duplicate/escaping
 resolved paths and atomically writes the sorted list consumed by pretraining.
 The pretrainer records input checksums in `clips.json`. Use development audio
-only; do not add downstream held-out clips. See the [experiment guide](../docs/REPRODUCIBILITY.md) for pretraining defaults
+only; do not add downstream held-out clips. See the [experiment guide](../docs/METHOD.md) for pretraining defaults
 and encoder transfer.
 
 ## Validate any classification manifest

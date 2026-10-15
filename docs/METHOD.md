@@ -73,7 +73,64 @@ held-out audio out of pretraining.
 
 [Dataset preparation](../data_splits/README.md) defines the Speech Commands
 silence recipe, VoxForge language classes and Ambient Context label mapping.
-The [experiment guide](REPRODUCIBILITY.md) covers saved artifacts, seeds and
-native Flower execution. Model updates are exchanged during federation;
-differential privacy and secure aggregation require additional mechanisms.
-[Source credits](../PROVENANCE.md) identify the code and license.
+Model updates are exchanged during federation; differential privacy and secure
+aggregation require additional mechanisms. Run settings and outputs follow below.
+
+## Data and seeds
+
+Follow [dataset preparation](../data_splits/README.md), then run
+`fedstar validate --manifest PATH` to decode files and verify their saved hashes.
+Training rechecks structure, labels and duplicate paths. Keep audio available
+at the manifest's recorded paths. Manifests and run records can contain local
+absolute paths; share them according to the dataset's terms.
+
+Default settings are Adam 1e-3, beta 0.5, temperature 4, confidence 0.5→0.9,
+one local epoch, 100 rounds, 80% participation and 25% quantity variation.
+Dataset configs start with five clients and 5% labels. `batch_size=64` is a total
+batch of 32 labeled plus 32 unlabeled examples. The method definitions above
+defines label rounding, class-skew allocation and the optional loss mode.
+
+Use at least three separately seeded runs for mean-over-three evaluation, for
+example seeds 2021, 2022 and 2023. Record every seed and choose distinct output
+directories. The sequential CPU path enables TensorFlow deterministic operations.
+Hardware/software changes or Flower runtime node-ID assignment can change
+partial-participation trajectories; preserve participant and sample-count logs.
+
+## Outputs and encoder transfer
+
+| File | Contents |
+|---|---|
+| `config.json` | Resolved parameters and effective temperature |
+| `partitions.json` | Shared class order, client records/label masks and test IDs |
+| `environment.json` | Interpreter/platform/devices/packages, manifest and optional encoder hashes |
+| `metrics.json` | Dataset/mode, runtime, round accuracy/loss, participants, exact weights, local losses, thresholds and accepted pseudo-label counts |
+| `model.keras` | Final classifier and encoder; load with `tf.keras.models.load_model` |
+
+Flower includes initial evaluation at round 0. Existing output directories are
+rejected so each experiment retains its own files.
+
+Pretraining writes `encoder.keras`, `clips.json` (paths and SHA-256),
+`environment.json` and `metrics.json` with the objective, seed, epochs, batch
+size, learning rate, clip count and losses. Defaults are 500 epochs and batch
+size 1024. Use separate FSD50K development audio and exclude downstream held-out
+clips. Set `pretrained_encoder` in the downstream config to the saved encoder;
+otherwise training starts from random initialization.
+
+## Native Flower CLI
+
+Run the README's `flwr run . --stream` command and match `num-supernodes` to the
+configured client count. Pass absolute `config` and `output` paths. The virtual
+environment's real path must not contain spaces; repository and data paths may.
+Files in `configs/` resolve paths against the checkout; other config files resolve
+paths against their own directory. CLI output overrides use the working directory.
+
+Use the same `FLWR_HOME` for `flwr list`, `flwr log RUN_ID --show` and
+`flwr stop RUN_ID`. Stopping a run leaves its local SuperLink available. When
+changing environments, stop only that environment's service; see the
+[Flower runtime guide](https://flower.ai/docs/framework/main/en/how-to-run-flower-locally.html).
+The README sets isolated ports and disables automatic runtime dependency installation.
+
+Check the completed run status and saved metrics/model files. `flwr build`
+packages the app; the Python `flower` command uses the same apps through Ray,
+and `train` executes the shared trainer sequentially. Deployment across machines
+requires client-local data, authenticated transport and an evaluation policy.

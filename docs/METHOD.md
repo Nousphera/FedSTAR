@@ -1,30 +1,79 @@
-# Paper-to-code mapping
+# Method and configuration
 
-Reference: Tsouvalas, Saeed, Ozcelebi, *Federated Self-training for Semi-supervised Audio Recognition*, TECS 21(6), 2022, DOI [10.1145/3520128](https://doi.org/10.1145/3520128). The final journal PDF, rather than only the shorter ICASSP version, governs this implementation.
+FedSTAR implements federated audio self-training described in
+[Tsouvalas, Saeed and Ozcelebi, ACM TECS 21(6), 2022](https://doi.org/10.1145/3520128).
 
-| Paper component | Maintained implementation | Source correspondence / qualification |
-|---|---|---|
-| §5.2 four spectral/temporal CNN blocks | `fedstar/model.py:build_encoder` | Branch kernels (1,4)/(4,1), widths 24/32/64/128, concatenate, 1×1 convolution, GN 4, ReLU, max pool 2, spatial dropout 0.1, L2 1e-4, global max pool; recovered from `src/model.py`. No attention block. |
-| §5.1–5.2 audio | `data.py:read_wave,features` | Mono average and explicit 16kHz resampling; 1-second crops; STFT 400 / hop 160 / FFT 1024, 64 mel60–7800Hz, log magnitude. FFT/band limits and L2 waveform normalization come from source. |
-| §5.2 clip evaluation | `train.py:evaluate` | Mean class probabilities over full nonoverlapping one-second segments. Short clips symmetrically padded; trailing partial segment dropped. Original averages logits instead. |
-| Algorithm 1 local objective | `method.py:self_training_loss`, `train.py:local_train` | `Ls + beta Lu`, beta 0.5; separate means over labeled/all unlabeled examples, including rejected unlabeled examples in denominator; hard labels from detached softmax(logits/T). Equal-sized L/U batches, cycling L for one pass over U per epoch. |
-| §4.3 and Table 2 confidence | `method.py:confidence_threshold` | T=4; threshold 0.9−0.2(1+cos(πr/R)), where r is completed global rounds. Training starts at0.5; 0.9 is reached after the final round. No client-local participation schedule. |
-| §5.3 data allocation | `data.py:partition` | Floor class-wise label budgets preserve original class proportions up to integer rounding. Remaining unlabeled data randomly subset by U; independent L/U ownership. Seeded quantity allocation near N/K with configurable variation. Every example assigned once. |
-| §5.4 label-skew ablation | `data.py:partition(class_skew=True)` | Restrict labeled class ownership; distribute classes among clients, splitting a class if clients exceed classes. Unlabeled ownership identical with this switch on/off. |
-| Algorithm 1 FedAvg | `method.py:aggregate`, `server_app.py:SeededFedAvg` | Weight by exact local retained utterance count Nl+Nu (Nl in supervised mode), not batch count. Uniform random clients without replacement, floor(qK), minimum1. Fresh Adam each local fit, as original source. |
-| §4.4 optional centralized pretraining | `pretrain.py`, `model.py:contrastive_loss` | Two stochastic crops per clip; 256-unit projection, learned bilinear matrix, other clips as negatives. Encoder transferred; projection discarded. Original code/checkpoint absent. Explicit reconstruction choice: symmetric cross-view InfoNCE, identity-initialized bilinear matrix, Adam 1e-3, no extra temperature or projection normalization. These details are not specified by the paper. |
+## Encoder and features
 
-## Source discrepancies and repairs
+The encoder in `fedstar/model.py` has four spectral/temporal CNN blocks with
+widths 24, 32, 64 and 128. Each concatenates `(1,4)` and `(4,1)` branches, then
+applies a 1×1 convolution, four-group normalization, ReLU, 2×2 max pooling,
+spatial dropout 0.1 and L2 regularization 1e-4. Global max pooling produces the
+encoder representation. The classifier is a dense layer over the dataset's
+shared class mapping.
 
-The original public code is preserved under `src/` and at `federatedml-baseline` (`a457290fcd172d5fe8c978e49b2d1bd7df91987c`). The maintained path fixes TensorFlow Addons removal/Keras 3 symbolic API usage and Flower 0.17 signatures. It also corrects concrete problems:
+Audio channels are averaged and resampled to 16 kHz. Features use one-second
+crops, a 400-sample STFT window, hop 160, FFT 1024, 64 mel bins from 60–7800 Hz,
+log magnitude and L2 waveform normalization. Evaluation averages class
+probabilities over complete nonoverlapping one-second segments. Short clips
+are symmetrically padded; a trailing partial segment is dropped.
 
-- Original `PSL_Network.train_step` defaults to T=4, but `fit(T=1)` always overrides it. Paper mode uses T=4. `mode: source-loss` exposes the original T=1 and convex `(1-beta)Ls+betaLu` objective. It does not restore every historical preprocessing defect.
-- Original training crop is15,690 samples, test frame15,680. Maintained crops are 16,000 per the paper. Tail handling and waveform normalization are explicit above.
-- Original single loader maps VoxForge languages to “unknown” and interprets Ambient TSV labels incorrectly. Adapters preserve six language IDs and trim Ambient label whitespace; Speech Commands uses fixed12 labels, including unknown and silence. Train and test share one mapping.
-- Original sample-rate metadata is ignored; current adapter resamples. Original per-split `np.unique` label mappings can disagree; current mapping is fixed/shared.
-- Original shuffled sample allocation accidentally iterates the pre-shuffle lists, can miscount remainder samples, and truncates U with `len(U)-1`. Current allocation accounts for every retained sample. It is deterministic, but not identical to unrecoverable original client membership.
-- Original FedAvg reports `num_batches * batch_size`; actual local utterance counts now weight every update. Empty labeled clients fail with a useful message; a fully supervised dataset is supported without division by zero.
+## Local self-training
 
-The paper's reported results and original missing experiment ledger do not establish an exact seed, partition, silence-generation rule, or pretrained checkpoint for every figure. This release records choices and validates execution; it does not infer that corrected code reproduces those values.
+The default objective is `Ls + beta * Lu`, with `beta=0.5`. Pseudo-labels are
+hard labels from detached `softmax(logits / T)`, with default `T=4`. Labeled and
+unlabeled losses are separate means; rejected pseudo-labels contribute zero
+while remaining in the unlabeled denominator. Equal-sized labeled/unlabeled
+batches cycle the labeled subset during one pass over the unlabeled subset.
+`batch_size=64` means 32 labeled plus 32 unlabeled examples.
 
-The sequential runner seeds client IDs directly. Flower seeds selection over sorted node IDs; those node IDs can change between launches, so partial-participation trajectories need not match the sequential engine. Full-participation local updates use the same client seeds in both paths. Flower aborts incomplete cohorts rather than silently changing the averaging denominator.
+The confidence threshold follows the global-round schedule
+`0.9 - 0.2 * (1 + cos(pi*r/R))`, where `r` is the completed global round count.
+Training starts at 0.5 and reaches 0.9 after the final round. Each client fit
+creates a fresh Adam optimizer with default learning rate 1e-3.
+
+For a loss ablation, `mode="source-loss"` uses temperature 1 and the convex
+objective `(1-beta)*Ls + beta*Lu`. Other preprocessing and sampling settings
+remain the same.
+
+## Partitions and aggregation
+
+Class-wise floor budgets preserve label proportions up to integer rounding.
+Labeled and unlabeled ownership are assigned independently, with configurable
+quantity variation around the mean client size. `U` subsamples the unlabeled
+pool. Each retained example belongs to exactly one client. Empty labeled
+clients fail before training.
+
+`class_skew=true` restricts labeled class ownership, splitting classes when
+there are more clients than classes. It leaves unlabeled ownership unchanged,
+so comparisons isolate the labeled-distribution change.
+
+FedAvg weights updates by exact retained utterance counts, `Nl+Nu` (or `Nl` for
+supervised-only training). Each round samples `floor(participation * clients)`
+clients without replacement, with a minimum of one. Flower rejects incomplete
+cohorts. Its runtime node-ID ordering can change between launches, whereas the
+sequential engine seeds client IDs directly; preserve participation logs for
+comparisons with partial participation.
+
+## Contrastive pretraining
+
+`fedstar pretrain` learns an encoder from separate FSD50K development audio.
+Two stochastic crops from each clip pass through the encoder and a 256-unit
+projection. Symmetric cross-view InfoNCE uses a learned, identity-initialized
+bilinear matrix; other clips in the batch supply negatives. Adam uses 1e-3,
+with no additional temperature or projection normalization. These settings
+make the bilinear objective in paper §4.4 explicit.
+
+Defaults are 500 epochs and batch size 1024. Save the encoder, discard the
+projection and bilinear matrix, and set downstream `pretrained_encoder` to
+`encoder.keras`. Supply development clips separately and keep downstream
+held-out audio out of pretraining.
+
+## Data and deployment
+
+[Dataset preparation](../data_splits/README.md) defines the Speech Commands
+silence recipe, VoxForge language classes and Ambient Context label mapping.
+The [experiment guide](REPRODUCIBILITY.md) covers saved artifacts, seeds and
+native Flower execution. Model updates are exchanged during federation;
+differential privacy and secure aggregation require additional mechanisms.
+[Source credits](../PROVENANCE.md) identify the code and license.

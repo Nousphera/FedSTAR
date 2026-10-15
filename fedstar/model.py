@@ -1,4 +1,4 @@
-"""Architecture from src/model.py, using maintained Keras GroupNormalization."""
+"""Four-block audio CNN with Keras GroupNormalization."""
 
 import tensorflow as tf
 
@@ -45,8 +45,7 @@ def build_model(num_classes, dropout=0.1):
 def contrastive_loss(first, second, bilinear):
     """Symmetric cross-view InfoNCE with learned bilinear similarities.
 
-    This explicit choice reconstructs the paper's underspecified bilinear loss;
-    it is not a recovered original pretraining implementation.
+    Other examples in each view provide the contrastive negatives.
     """
     logits = tf.matmul(tf.matmul(first, bilinear), second, transpose_b=True)
     targets = tf.range(tf.shape(first)[0])

@@ -168,6 +168,7 @@ def test_two_client_train_and_artifact_roundtrip(tmp_path):
         output=str(tmp_path / "run"),
     )
     result = run(config)
+    assert result["dataset"] == config.dataset and result["mode"] == config.mode
     assert result["rounds"][0]["client_metrics"][0]["num_examples"] > 0
     assert np.isfinite(result["rounds"][0]["eval_loss"])
     assert (
@@ -202,6 +203,8 @@ def test_real_wav_training_and_encoder_transfer(tmp_path):
         json.dumps({"task": "voxforge", "records": rows, "classes": classes})
     )
     encoder = pretrain(paths[:2], tmp_path / "pretrain", epochs=1, batch_size=2)
+    metadata = json.loads((tmp_path / "pretrain/metrics.json").read_text())
+    assert metadata["objective"] == "symmetric-bilinear-infonce"
     config = RunConfig(
         dataset="voxforge",
         manifest=str(manifest),
@@ -217,4 +220,5 @@ def test_real_wav_training_and_encoder_transfer(tmp_path):
     for a, b in zip(encoder.get_weights(), loaded.get_weights()):
         np.testing.assert_array_equal(a, b)
     result = run(config)
+    assert result["dataset"] == config.dataset and result["mode"] == config.mode
     assert all(np.isfinite(r["loss"]) for r in result["rounds"][0]["client_metrics"])

@@ -1,4 +1,4 @@
-"""Paper-derived FSD50K contrastive pretraining, not recovered historical code."""
+"""Contrastive encoder pretraining on separately prepared audio clips."""
 
 from pathlib import Path
 import json
@@ -78,8 +78,7 @@ def pretrain(
     (output / "metrics.json").write_text(
         json.dumps(
             {
-                "paper_derived_reconstruction": True,
-                "benchmark_reproduction": False,
+                "objective": "symmetric-bilinear-infonce",
                 "seed": seed,
                 "epochs": epochs,
                 "batch_size": batch_size,

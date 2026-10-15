@@ -1,78 +1,83 @@
-# Reproducibility record
+# Experiment guide
 
-## Environment and scope
+## Environment
 
-The maintained package is `fedstar/`; `src/` and the old launcher preserve source history. Tested on macOS arm64 CPU with Python 3.11.15, TensorFlow 2.20.0, Keras 3.15.1, NumPy 1.26.4, ml-dtypes 0.5.4, Flower 1.40.0, Ray 2.55.1. The dependency snapshot is `requirements-lock-py311.txt`; it records the validated environment, not a cross-platform wheel lock. Python 3.12 and Linux CI are supported targets but not locally measured environments.
+Use Python 3.11 or 3.12 and the [setup script](../scripts/setup_env.sh).
+`requirements-lock-py311.txt` records a Python 3.11.15/macOS arm64 CPU environment
+with TensorFlow 2.20.0, Keras 3.15.1, NumPy 1.26.4, ml-dtypes 0.5.4,
+Flower 1.40.0 and Ray 2.55.1. Run `python -m pip check` and
+`python -m pytest -q` after installation.
 
-Create the virtualenv in a path without spaces. Ray 2.55.1 worker launch on this macOS host failed when the interpreter/package path contained spaces; symlinking the whole venv did not fix the resolved path. A newly created no-space virtualenv works. No CUDA/GPU execution was validated.
+Tests cover pseudo-label temperature/masking/gradients, threshold endpoints,
+exact aggregation, model updates/serialization, all dataset adapters,
+deterministic partitions, label-skew isolation, resampling, generated-WAV
+training, contrastive gradients, encoder transfer and Flower message execution.
 
-```bash
-python3.11 -m venv ~/.venvs/fedstar
-source ~/.venvs/fedstar/bin/activate
-python -m pip install -r requirements-lock-py311.txt
-python -m pip install -e '.[flower,test]'
-python -m pip check
-python -m pytest -q
-fedstar train --config configs/smoke.json
-fedstar flower --config configs/smoke.json --output runs/flower-smoke
-flwr build
-```
+## Data and seeds
 
-The unit suite checks analytic pseudo-label temperature/masking/normalization and gradients, threshold endpoints, exact FedAvg weighting, model gradients/serialization, all three adapters, split overlap/missing data, deterministic partitions and label-skew isolation, resampling, generated WAV training, contrastive gradients and encoder transfer. Historical launcher tests still cover owned-process cleanup and port preservation. The Flower command exercises actual Ray workers and Message API aggregation; it is not a mock or centralized loop.
+Follow [dataset preparation](../data_splits/README.md), then run
+`fedstar validate --manifest PATH` to decode files and verify their saved hashes.
+Training rechecks structure, labels and duplicate paths. Keep audio available
+at the manifest's recorded paths. Manifests and run records can contain local
+absolute paths; share them according to the dataset's terms.
 
-## Data, partitions and seeds
+Default settings are Adam 1e-3, beta 0.5, temperature 4, confidence 0.5→0.9,
+one local epoch, 100 rounds, 80% participation and 25% quantity variation.
+Dataset configs start with five clients and 5% labels. `batch_size=64` is a total
+batch of 32 labeled plus 32 unlabeled examples. The [method guide](METHOD.md)
+defines label rounding, class-skew allocation and the optional loss mode.
 
-See [dataset preparation](../data_splits/README.md). JSON manifests retain local absolute audio paths and label mappings; keep them local. Runtime output can also contain those paths. No audio, checkpoint, output, or dataset manifest is bundled. Paths in shipped configs resolve against the checkout; see the native CLI section.
+Use at least three separately seeded runs for mean-over-three evaluation, for
+example seeds 2021, 2022 and 2023. Record every seed and choose distinct output
+directories. The sequential CPU path enables TensorFlow deterministic operations.
+Hardware/software changes or Flower runtime node-ID assignment can change
+partial-participation trajectories; preserve participant and sample-count logs.
 
-Defaults follow Table 2/main experiments: Adam 1e-3, beta 0.5, T=4, confidence0.5→0.9, one local epoch, 100 rounds, 80% participation, 25% quantity variation. Shipped dataset configs use5 clients and5% labeled data as an explicit starting setting; change them to the figure/table being evaluated. `batch_size=64` is total batch size (32L+32U). Source and paper do not fully specify all rounding and seed choices; see [method mapping](METHOD.md).
+## Outputs and encoder transfer
 
-Use at least three separately seeded runs for the paper's mean-over-three evaluation, for example2021/2022/2023. These seeds are provided execution choices, not a recovered paper ledger. With a fixed config/seed the local CPU sequential path enables TensorFlow deterministic operations. Hardware/software changes or partial participation in Flower can change trajectories.
+| File | Contents |
+|---|---|
+| `config.json` | Resolved parameters and effective temperature |
+| `partitions.json` | Shared class order, client records/label masks and test IDs |
+| `environment.json` | Interpreter/platform/devices/packages, manifest and optional encoder hashes |
+| `metrics.json` | Dataset/mode, runtime, round accuracy/loss, participants, exact weights, local losses, thresholds and accepted pseudo-label counts |
+| `model.keras` | Final classifier and encoder; load with `tf.keras.models.load_model` |
 
-## Artifact schema
+Flower includes initial evaluation at round 0. Existing output directories are
+rejected so each experiment retains its own files.
 
-Each new output directory contains:
-
-- `config.json`: resolved parameters and effective temperature.
-- `partitions.json`: class order, ordered records per client (unlabeled targets −1), test IDs. No waveforms; local paths may be present.
-- `environment.json`: interpreter, platform, devices, package versions; real-data manifest SHA256 and optional encoder SHA256.
-- `metrics.json`: benchmark-reproduction flag (false), runtime, evaluation accuracy/loss by round, participant IDs, exact client weights, local loss, thresholds and accepted pseudo-label counts. Flower includes initial evaluation at round 0.
-- `model.keras`: final classifier and encoder; load with `tf.keras.models.load_model`.
-
-Pretraining writes `encoder.keras`, `clips.json` (paths and SHA256), `environment.json`, and `metrics.json` with explicit reconstruction status, seed, epoch/batch settings, clip count and losses. Its default500 epochs with batch size 1024 was not run in release validation. Pretraining inputs must exclude downstream held-out data; use the separate FSD50K corpus as described in §4.4. This release trains that reconstruction from scratch; it ships no pretrained weights.
-
-## Remaining scientific limits
-
-Published benchmarks have not been rerun. Supplied Speech Commands split files refer to 668 generated silence examples absent from the official archives; their original generation recipe is unknown. Original pretraining source/checkpoints, all experiment seeds, exact client memberships, and full result ledgers were not recovered. The maintained preprocessing and objective intentionally correct documented source/paper discrepancies, so passing tests cannot establish numerical equivalence to the paper or historical code. No formal privacy guarantee, secure aggregation, or differential privacy is added by this local training implementation.
-
+Pretraining writes `encoder.keras`, `clips.json` (paths and SHA-256),
+`environment.json` and `metrics.json` with the objective, seed, epochs, batch
+size, learning rate, clip count and losses. Defaults are 500 epochs and batch
+size 1024. Use separate FSD50K development audio and exclude downstream held-out
+clips. Set `pretrained_encoder` in the downstream config to the saved encoder;
+otherwise training starts from random initialization.
 
 ## Native Flower CLI
 
-The README's `flwr run . --stream` runs the packaged ClientApp and ServerApp
-through Flower 1.40's managed local SuperLink. Both native CLI paths were verified
-with two clients and two rounds; client metrics, server metrics and model files
-were saved. Generated-data execution is not a dataset benchmark.
+The README's `flwr run . --stream` starts the packaged ClientApp and ServerApp
+through Flower 1.40's local SuperLink. Set `num-supernodes` to the configured
+client count. Use absolute `config` and `output` paths in `--run-config`.
 
-`FLWR_HOME` and the local HTTP port in the README isolate this app's runtime from
-other projects. Flower keeps the managed SuperLink running after a run. Use
-`flwr list`, `flwr log RUN_ID --show`, or `flwr stop RUN_ID` in the same environment.
-A stop request stops that run, not the background service. The official
+Create the virtual environment in a path without spaces, including the actual
+package location; a symlink to a space-containing environment is insufficient
+for Ray workers. Repository and dataset paths may contain spaces. Paths inside
+files in `configs/` resolve against the checkout. Other config files resolve
+paths against their own directory; CLI output overrides use the caller's
+working directory.
+
+`FLWR_HOME`, `FLWR_LOCAL_SUPERLINK_HTTP_API_PORT` and
+`FLWR_LOCAL_CONTROL_API_PORT` isolate the app's local runtime. The README sets
+`FLWR_DISABLE_RUNTIME_DEPENDENCY_INSTALLATION=1` to use the setup environment.
+Flower keeps its SuperLink service running between jobs. Use `flwr list`,
+`flwr log RUN_ID --show` and `flwr stop RUN_ID` with the same environment.
+Stopping a run leaves the service available for future runs. Consult the
 [local runtime guide](https://flower.ai/docs/framework/main/en/how-to-run-flower-locally.html)
-explains service lifecycle and logs. If changing virtual environments, inspect
-and stop only the matching service process before starting its replacement.
-`FLWR_DISABLE_RUNTIME_DEPENDENCY_INSTALLATION=1` uses the dependencies already
-installed by setup; this avoids a second uncontrolled installation at run time.
+for service lifecycle and logs; when switching environments, stop only the
+service associated with that `FLWR_HOME`.
 
-The Python environment and its actual package files must live in paths without
-spaces; symlinking a space-containing environment is insufficient. The repository
-and data paths may contain spaces. Supply absolute `config` and `output` paths in
-`--run-config`, as shown in the README. Paths inside files in `configs/` resolve
-against that directory's parent (the checkout), even when Flower executes its
-bundle elsewhere. For a config outside `configs/`, paths resolve against the
-config file's own directory. CLI `--output` overrides resolve in the caller's
-working directory. Set `num-supernodes` equal to the configured client count.
-
-Preparation now decodes every input and records SHA-256/byte counts before
-atomically publishing its manifest. `fedstar validate --manifest PATH` checks those
-hashes again. Training performs structural, label and duplicate-path checks;
-run explicit validation after moving or changing data. Preparation and training
-refuse to overwrite outputs. Manifests are local artifacts and can reveal paths.
+Confirm the run reports completion and inspect the saved metrics/model files.
+`flwr build` packages the app. The Python `flower` subcommand runs the same apps
+through Ray, and `train` runs the shared trainer sequentially for debugging.
+Deployment across machines additionally requires client-local data provisioning,
+authenticated transport and a server-side evaluation policy.

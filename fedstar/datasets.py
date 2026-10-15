@@ -109,7 +109,7 @@ def prepare_speech(train_root, test_root, output, seed=2021, silence_count=668):
             recipe.append({"file": name, "source": str(noises[index]), "start_16khz": start})
         write_json(stage / "manifest.json", {"schema": 1, "task": "speech_commands", "classes": classes,
                    "records": rows, "preparation": {"recipe": "official-heldout-plus-seeded-noise-v1", "seed": seed,
-                   "historical_paper_split": False, "silence_count": silence_count,
+                   "silence_count": silence_count,
                    "noise_sources": [{"path": str(p), "sha256": checksum(p)} for p in noises], "silence": recipe}})
         stage.rename(output)
     return output / "manifest.json"

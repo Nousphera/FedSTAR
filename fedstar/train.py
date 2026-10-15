@@ -312,7 +312,6 @@ def run(config):
         print(json.dumps(result), flush=True)
     model.save(output / "model.keras")
     result = {
-        "benchmark_reproduction": False,
         "dataset": config.dataset,
         "mode": config.mode,
         "seconds": time.monotonic() - start,

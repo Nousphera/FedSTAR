@@ -48,7 +48,7 @@ def test_speech_recipe_deterministic_and_feeds_actual_training(tmp_path):
     b = prepare_speech(tmp_path / "train", tmp_path / "test", tmp_path / "b", silence_count=4)
     va, vb = json.loads(a.read_text()), json.loads(b.read_text())
     assert [r["sha256"] for r in va["records"]] == [r["sha256"] for r in vb["records"]]
-    assert va["preparation"]["historical_paper_split"] is False
+    assert va["preparation"]["recipe"] == "official-heldout-plus-seeded-noise-v1"
     check_records(va["records"], va["classes"], ("train", "test"), decode=read_wave, verify_hashes=True)
     result = run(RunConfig(dataset="speech_commands", manifest=str(a), clients=2, rounds=1,
                           participation=1., labeled_fraction=.5, batch_size=4, output=str(tmp_path / "run")))

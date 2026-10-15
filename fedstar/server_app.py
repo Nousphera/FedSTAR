@@ -103,7 +103,6 @@ def create_app(config_override=None):
         (output / "metrics.json").write_text(
             json.dumps(
                 {
-                    "benchmark_reproduction": False,
                     "dataset": config.dataset,
                     "mode": config.mode,
                     "seconds": time.monotonic() - start,

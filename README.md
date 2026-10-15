@@ -17,7 +17,7 @@ Federated Learning is a distributed machine learning paradigm dealing with decen
 
 ## Requirements and installation
 
-Use Python 3.11 or 3.12. The dependency lock targets Python 3.11 on macOS arm64 CPU.
+Use Python 3.11 or 3.12 in a dedicated virtual environment.
 Create the environment at a path without spaces for Flower/Ray workers.
 
 ```bash
@@ -28,8 +28,8 @@ source "$HOME/.venvs/fedstar/bin/activate"
 python -m pytest -q
 ```
 
-The script creates a new environment, installs `.[flower,test]` constrained by
-`requirements-lock-py311.txt`, and checks dependencies. It never changes an
+The script creates a new environment, installs `requirements.txt` including Flower simulation
+and tests, and checks dependencies. It never changes an
 existing environment. The package and command-line entry points are in `fedstar/`.
 
 ## Data preparation

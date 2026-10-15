@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install maintenance tools
-        run: python -m pip install cffconvert==2.0.0 '.[flower,test]'
+        run: python -m pip install -r requirements.txt cffconvert==2.0.0
       - name: Validate citation metadata
         run: cffconvert --validate
       - name: Compile Python sources
